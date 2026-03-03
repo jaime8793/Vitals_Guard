@@ -45,7 +45,7 @@ class LifestyleModifiers(BaseModel):
     daily_steps: int = Field(default=5000, ge=0)
     sleep_hours: float = Field(default=7.0, ge=0, le=24)
     hydration_liters: float = Field(default=2.0, ge=0, le=10)
-    stress_level: int = Field(default=5, ge=1, le=10)
+    stress_level: float = Field(default=5, ge=1, le=10)
 
 # ===========================================================================
 # 1. METABOLIC / DIABETES MODEL
