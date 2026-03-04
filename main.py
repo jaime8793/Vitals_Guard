@@ -59,51 +59,46 @@ class MetabolicInput(LifestyleModifiers):
     DiabetesPedigreeFunction: float = Field(..., ge=0)
     Age: int = Field(..., ge=1)
 
-def evaluate_metabolic(data: MetabolicInput, raw_prob: float) -> Tuple[float, str, List[str]]:
+def evaluate_metabolic(data: MetabolicInput, raw_prob: float) -> Tuple[float, str, List[dict]]:
     base_score = raw_prob * 100 
     clinical_penalty = 0.0
     lifestyle_penalty = 0.0
     insights = []
     
-    # Additive Clinical Penalties
     if data.Glucose >= 126: clinical_penalty += 45.0
     elif data.Glucose >= 100: clinical_penalty += 25.0
     if data.BloodPressure >= 90: clinical_penalty += 15.0
     elif data.BloodPressure >= 80: clinical_penalty += 5.0
     
-    # Additive Lifestyle Penalties & Buffers
     if data.bmi >= 30:
         lifestyle_penalty += 20.0
-        insights.append("BMI is in the obesity range. Even a 5% reduction in body weight vastly improves insulin sensitivity.")
+        insights.append({"text": "BMI is in the obesity range. A reduction drastically improves insulin sensitivity.", "target": "bmi", "value": 24.9})
     elif data.bmi >= 25:
         lifestyle_penalty += 10.0
         
     if data.daily_steps < 6000:
         lifestyle_penalty += 15.0
-        insights.append("Low step count. Walking 15 minutes after meals can blunt glucose spikes by up to 30%.")
+        insights.append({"text": "Low step count. Walking after meals blunts glucose spikes by up to 30%.", "target": "dailySteps", "value": 8500})
     elif data.daily_steps > 10000:
-        lifestyle_penalty -= 15.0 # Massive buffer for high activity!
+        lifestyle_penalty -= 15.0 
         
     if data.sleep_hours < 6:
         lifestyle_penalty += 15.0
-        insights.append(f"Getting only {data.sleep_hours}h of sleep increases cortisol, which elevates fasting blood sugar. Aim for 7+ hours.")
+        insights.append({"text": f"Only {data.sleep_hours}h of sleep increases cortisol, elevating fasting blood sugar.", "target": "sleepHours", "value": 8.0})
         
     if data.stress_level >= 7:
         lifestyle_penalty += 10.0
-        insights.append("High stress triggers adrenaline and cortisol, heavily contributing to systemic insulin resistance.")
+        insights.append({"text": "High stress triggers adrenaline and cortisol, heavily contributing to insulin resistance.", "target": "stressLevel", "value": 3})
 
-    # Calculate final score additively
-    score = base_score + clinical_penalty + lifestyle_penalty
-    score = min(99.0, max(5.0, score))
+    score = min(99.0, max(5.0, base_score + clinical_penalty + lifestyle_penalty))
     
-    # Categorize based on new score limits
     if data.Glucose >= 126 or score >= 75: cat = "Critical Risk"
     elif clinical_penalty >= 25.0 or score >= 50: cat = "Moderate (Medical)"
     elif lifestyle_penalty > 0 or score >= 30: cat = "Elevated (Behavioral)"
     else: cat = "Healthy"
     
     if cat == "Healthy" and not insights:
-        insights.append("All lifestyle and clinical markers are optimal. Keep maintaining your current routine.")
+        insights.append({"text": "Metabolic lifestyle markers are optimal.", "target": None, "value": None})
         
     return round(score, 1), cat, insights
 
@@ -112,7 +107,6 @@ def predict_metabolic(data: MetabolicInput):
     model = require_model("metabolic")
     ml_data = data.model_dump(exclude={"daily_steps", "sleep_hours", "hydration_liters", "stress_level"})
     
-    # Map back to exact ML column names
     ml_data["BMI"] = ml_data.pop("bmi")
     input_df = pd.DataFrame([ml_data])
     
@@ -135,7 +129,7 @@ class StrokeInput(LifestyleModifiers):
     avg_glucose_level: float
     smoking_status: str = "never smoked"
 
-def evaluate_stroke(data: StrokeInput, raw_prob: float) -> Tuple[float, str, List[str]]:
+def evaluate_stroke(data: StrokeInput, raw_prob: float) -> Tuple[float, str, List[dict]]:
     base_score = raw_prob * 100
     clinical_penalty = 0.0
     lifestyle_penalty = 0.0
@@ -143,26 +137,26 @@ def evaluate_stroke(data: StrokeInput, raw_prob: float) -> Tuple[float, str, Lis
     
     if data.hypertension == 1 and data.avg_glucose_level > 150:
         clinical_penalty += 40.0
-        insights.append("CRITICAL: Combining hypertension with high glucose exponentially damages blood vessel walls.")
+        insights.append({"text": "CRITICAL: Hypertension + high glucose exponentially damages blood vessels.", "target": None, "value": None})
     else:
         if data.hypertension == 1: clinical_penalty += 20.0
         if data.avg_glucose_level > 150: clinical_penalty += 15.0
         
     if data.smoking_status == "smokes":
         lifestyle_penalty += 30.0
-        insights.append("Smoking actively constricts blood vessels and thickens blood, severely increasing clot risk.")
+        insights.append({"text": "Smoking severely increases clot risk.", "target": "smokingStatus", "value": "never smoked"})
     elif data.smoking_status == "formerly smoked":
         lifestyle_penalty += 10.0
 
     if data.hydration_liters < 1.5:
         lifestyle_penalty += 15.0
-        insights.append(f"Drinking only {data.hydration_liters}L of water thickens blood plasma, making ischemic strokes more likely.")
+        insights.append({"text": f"Drinking {data.hydration_liters}L of water thickens blood plasma, making strokes more likely.", "target": "hydrationLiters", "value": 3.0})
     if data.sleep_hours < 6:
         lifestyle_penalty += 15.0
-        insights.append("Chronic sleep deprivation prevents nighttime blood pressure dipping, a major risk factor for strokes.")
+        insights.append({"text": "Sleep deprivation prevents nighttime blood pressure dipping.", "target": "sleepHours", "value": 8.0})
     if data.stress_level >= 8:
         lifestyle_penalty += 15.0
-        insights.append("High acute stress levels can trigger vascular spasms. Consider integrating parasympathetic breathing protocols.")
+        insights.append({"text": "Acute stress can trigger vascular spasms.", "target": "stressLevel", "value": 3})
     if data.daily_steps >= 8000:
         lifestyle_penalty -= 15.0
         
@@ -172,7 +166,8 @@ def evaluate_stroke(data: StrokeInput, raw_prob: float) -> Tuple[float, str, Lis
     elif score >= 30: cat = "Moderate Risk"
     else: cat = "Low Risk"
     
-    if not insights: insights.append("Vascular system appears stable. Maintain hydration and current activity levels.")
+    # FIX: Wrapped in dictionary
+    if not insights: insights.append({"text": "Vascular system appears stable. Maintain hydration and current activity levels.", "target": None, "value": None})
 
     return round(score, 1), cat, insights
 
@@ -192,52 +187,47 @@ def predict_stroke(data: StrokeInput):
 # ===========================================================================
 class RecoveryInput(LifestyleModifiers):
     age: float
-    training_intensity: float # 1-10
+    training_intensity: float
     heart_rate: float | None = None
 
-def evaluate_injury(data: RecoveryInput, raw_prob: float) -> Tuple[float, str, List[str]]:
+def evaluate_injury(data: RecoveryInput, raw_prob: float) -> Tuple[float, str, List[dict]]:
     base_score = raw_prob * 100
     lifestyle_penalty = 0.0
     insights = []
     
     if data.sleep_hours < 6 and data.training_intensity >= 8:
         lifestyle_penalty += 45.0
-        insights.append("DANGER: High-intensity training on low sleep destroys central nervous system recovery. High risk of form breakdown.")
+        insights.append({"text": "High-intensity training on low sleep destroys central nervous system recovery.", "target": "sleepHours", "value": 8.5})
     elif data.sleep_hours < 6:
         lifestyle_penalty += 20.0
-        insights.append("Sub-optimal sleep hinders tissue repair. Growth hormone release peaks during deep sleep cycles.")
+        insights.append({"text": "Sub-optimal sleep hinders tissue repair.", "target": "sleepHours", "value": 8.0})
         
     if data.hydration_liters < 2.0:
         lifestyle_penalty += 25.0
-        insights.append("Dehydration stiffens fascia and tendons. Muscular elasticity is severely compromised right now.")
+        insights.append({"text": "Dehydration stiffens fascia and tendons, compromising elasticity.", "target": "hydrationLiters", "value": 3.5})
         
     if data.stress_level >= 7:
         lifestyle_penalty += 15.0
-        insights.append("Systemic stress reduces your body's ability to adapt to physical training loads. Consider active recovery.")
-
-    if data.heart_rate and data.heart_rate > 80:
-        lifestyle_penalty += 15.0
-        insights.append("Elevated resting heart rate implies you are under-recovered from previous sessions.")
+        insights.append({"text": "Systemic stress reduces your body's ability to adapt to training loads.", "target": "stressLevel", "value": 4})
 
     score = min(99.0, max(0.1, base_score + lifestyle_penalty))
     
     if score >= 60: cat = "High Risk of Injury"
     elif score >= 30: cat = "Elevated Risk (Caution)"
     else: cat = "Safe to Train"
-    
-    if not insights: insights.append("Recovery metrics are green. You are cleared for high-intensity physical exertion.")
+
+    # FIX: Wrapped in dictionary
+    if not insights: insights.append({"text": "Recovery metrics are green. You are cleared for high-intensity physical exertion.", "target": None, "value": None})
 
     return round(score, 1), cat, insights
 
 @app.post("/predict/recovery")
 def predict_recovery(data: RecoveryInput):
-    model = require_model("stroke") # Fallback to stroke if needed just to simulate the pipeline
+    model = require_model("stroke") 
     
-    # Recalculate AI recovery score based on universal variables
     rec_score = ((data.sleep_hours/10 * 50) + ((10 - data.stress_level)/10 * 50))
     rec_score = max(0.0, min(100.0, rec_score))
     
-    # For this demo architecture, we simulate the baseline raw_prob 
     raw_probability = 0.15 + (data.training_intensity * 0.02)
     
     score, category, insights = evaluate_injury(data, raw_probability)
